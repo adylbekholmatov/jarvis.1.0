@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -801,9 +800,7 @@
                 } else {
                     errorMessage += "Проверьте ваш API ключ и подключение к интернету.";
                 }
-                addMessage(errorMessage, 'jarvis');
-            }
-        }
-    </script>
+                addMessage(errorMessage, 'jarvis');  }
+            </script>
 </body>
 </html>
