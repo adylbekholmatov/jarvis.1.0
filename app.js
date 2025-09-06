@@ -20,38 +20,60 @@ let apiKey = '';
 let recognition = null;
 let isListening = false;
 let currentProvider = 'mistral';
-let synth = window.speechSynthesis;
+let synth = window.speechSynthesis || null;
 let voices = [];
 
+// Проверка поддержки Web Speech API
+function isSpeechSynthesisSupported() {
+    return 'speechSynthesis' in window;
+}
+
+function isSpeechRecognitionSupported() {
+    return ('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window);
+}
+
 function loadVoices() {
+    if (!isSpeechSynthesisSupported()) {
+        voiceSelect.innerHTML = '<option value="">Голосовой синтез не поддерживается</option>';
+        return;
+    }
+
     voices = synth.getVoices();
+    
+    // Если голоса еще не загружены, ждем события
+    if (voices.length === 0) {
+        voiceSelect.innerHTML = '<option value="">Загрузка голосов...</option>';
+        return;
+    }
+
     voiceSelect.innerHTML = '';
     
-    // Добавляем опцию по умолчанию
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
     defaultOption.textContent = 'Выберите голос...';
     voiceSelect.appendChild(defaultOption);
     
-    // Фильтруем голоса для русского и английского
+    // Фильтруем доступные голоса
     const availableVoices = voices.filter(voice => 
         voice.lang.startsWith('ru') || voice.lang.startsWith('en')
     );
     
-    // Сортируем голоса
     availableVoices.sort((a, b) => {
         if (a.lang < b.lang) return -1;
         if (a.lang > b.lang) return 1;
-        if (a.name < b.name) return -1;
-        if (a.name > b.name) return 1;
-        return 0;
+        return a.name.localeCompare(b.name);
     });
     
-    // Добавляем голоса в список
     availableVoices.forEach(voice => {
         const option = document.createElement('option');
         option.value = voice.name;
         option.textContent = `${voice.name} (${voice.lang})`;
+        
+        // Автовыбор русского голоса если есть
+        if (voice.lang.startsWith('ru-RU')) {
+            option.selected = true;
+        }
+        
         voiceSelect.appendChild(option);
     });
     
@@ -60,28 +82,22 @@ function loadVoices() {
 
 function loadVoiceSettings() {
     const savedVoice = localStorage.getItem('jarvisVoice');
-    const savedRate = localStorage.getItem('jarvisRate');
-    const savedPitch = localStorage.getItem('jarvisPitch');
-    const savedVolume = localStorage.getItem('jarvisVolume');
+    const savedRate = localStorage.getItem('jarvisRate') || '1';
+    const savedPitch = localStorage.getItem('jarvisPitch') || '1';
+    const savedVolume = localStorage.getItem('jarvisVolume') || '1';
     
-    if (savedVoice) {
+    if (savedVoice && voiceSelect.querySelector(`option[value="${savedVoice}"]`)) {
         voiceSelect.value = savedVoice;
     }
     
-    if (savedRate) {
-        rateInput.value = savedRate;
-        rateValue.textContent = savedRate;
-    }
+    rateInput.value = savedRate;
+    rateValue.textContent = savedRate;
     
-    if (savedPitch) {
-        pitchInput.value = savedPitch;
-        pitchValue.textContent = savedPitch;
-    }
+    pitchInput.value = savedPitch;
+    pitchValue.textContent = savedPitch;
     
-    if (savedVolume) {
-        volumeInput.value = savedVolume;
-        volumeValue.textContent = savedVolume;
-    }
+    volumeInput.value = savedVolume;
+    volumeValue.textContent = savedVolume;
 }
 
 function saveVoiceSettings() {
@@ -92,43 +108,104 @@ function saveVoiceSettings() {
 }
 
 function speakText(text) {
+    if (!isSpeechSynthesisSupported()) {
+        console.warn('Голосовой синтез не поддерживается');
+        return;
+    }
+
     if (synth.speaking) {
         synth.cancel();
     }
     
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Находим выбранный голос
     if (voiceSelect.value) {
         const selectedVoice = voices.find(voice => voice.name === voiceSelect.value);
         if (selectedVoice) {
             utterance.voice = selectedVoice;
+            utterance.lang = selectedVoice.lang;
         }
     }
     
-    // Устанавливаем параметры
     utterance.rate = parseFloat(rateInput.value);
     utterance.pitch = parseFloat(pitchInput.value);
     utterance.volume = parseFloat(volumeInput.value);
     
-    // Обработчики событий для отладки
-    utterance.onstart = function() {
-        console.log('Начало воспроизведения');
-    };
-    
-    utterance.onend = function() {
-        console.log('Конец воспроизведения');
-    };
-    
+    // Кросс-браузерная обработка ошибок
     utterance.onerror = function(event) {
         console.error('Ошибка воспроизведения:', event.error);
+        addMessage('Ошибка воспроизведения голоса. Проверьте настройки браузера.', 'jarvis');
     };
     
-    synth.speak(utterance);
+    try {
+        synth.speak(utterance);
+    } catch (error) {
+        console.error('Ошибка при воспроизведении:', error);
+    }
 }
 
-// Остальной код остается без изменений до функции checkSpeechRecognitionSupport...
+function setupSpeechRecognition() {
+    if (!isSpeechRecognitionSupported()) {
+        voiceError.textContent = "Ваш браузер не поддерживает распознавание речи. Используйте Chrome, Edge или Safari.";
+        voiceButton.style.opacity = "0.5";
+        voiceButton.style.cursor = "not-allowed";
+        return null;
+    }
 
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.lang = 'ru-RU';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    recognition.onstart = function() {
+        isListening = true;
+        voiceButton.classList.add('listening');
+        voiceStatus.textContent = "Слушаю...";
+        voiceError.textContent = "";
+    };
+    
+    recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        addMessage(transcript, 'user');
+        processCommand(transcript);
+    };
+    
+    recognition.onerror = function(event) {
+        console.error('Ошибка распознавания:', event.error);
+        let errorMessage = "Ошибка: ";
+        
+        switch(event.error) {
+            case 'network':
+                errorMessage += "проблемы с сетью";
+                break;
+            case 'not-allowed':
+                errorMessage += "микрофон не разрешен. Разрешите доступ к микрофону в настройках браузера";
+                break;
+            case 'service-not-allowed':
+                errorMessage += "сервис распознавания недоступен";
+                break;
+            default:
+                errorMessage += event.error;
+        }
+        
+        voiceError.textContent = errorMessage;
+        isListening = false;
+        voiceButton.classList.remove('listening');
+        voiceStatus.textContent = "Нажмите для активации микрофона";
+    };
+    
+    recognition.onend = function() {
+        isListening = false;
+        voiceButton.classList.remove('listening');
+        voiceStatus.textContent = "Нажмите для активации микрофона";
+    };
+    
+    return recognition;
+}
+
+// Обновленные обработчики событий
 mistralBtn.addEventListener('click', () => {
     currentProvider = 'mistral';
     mistralBtn.classList.add('active');
@@ -154,67 +231,17 @@ function updateInstructions() {
     }
 }
 
-function checkSpeechRecognitionSupport() {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
-        recognition.lang = 'ru-RU';
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        
-        recognition.onstart = function() {
-            isListening = true;
-            voiceButton.classList.add('listening');
-            voiceStatus.textContent = "Слушаю...";
-            voiceError.textContent = "";
-        };
-        
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            addMessage(transcript, 'user');
-            processCommand(transcript);
-        };
-        
-        recognition.onerror = function(event) {
-            console.error('Ошибка распознавания:', event.error);
-            let errorMessage = "Ошибка: ";
-            switch(event.error) {
-                case 'network':
-                    errorMessage += "проблемы с сетью";
-                    break;
-                case 'not-allowed':
-                    errorMessage += "микрофон не разрешен";
-                    break;
-                case 'service-not-allowed':
-                    errorMessage += "сервис распознавания недоступен";
-                    break;
-                default:
-                    errorMessage += event.error;
-            }
-            voiceError.textContent = errorMessage;
-            isListening = false;
-            voiceButton.classList.remove('listening');
-            voiceStatus.textContent = "Нажмите для активации микрофона";
-        };
-        
-        recognition.onend = function() {
-            isListening = false;
-            voiceButton.classList.remove('listening');
-            voiceStatus.textContent = "Нажмите для активации микрофона";
-        };
-        
-        return true;
-    } else {
-        voiceError.textContent = "Ваш браузер не поддерживает распознавание речи. Используйте Chrome или Edge.";
-        voiceButton.style.opacity = "0.5";
-        voiceButton.style.cursor = "not-allowed";
-        return false;
-    }
-}
-
 window.addEventListener('load', () => {
-    checkSpeechRecognitionSupport();
+    // Проверяем поддержку API
+    if (!isSpeechSynthesisSupported()) {
+        voiceSelect.innerHTML = '<option value="">Голосовой синтез не поддерживается</option>';
+        voiceSelect.disabled = true;
+        testVoiceBtn.disabled = true;
+    }
+
+    recognition = setupSpeechRecognition();
     
+    // Загружаем сохраненные данные
     const savedApiKey = localStorage.getItem('jarvisApiKey');
     const savedProvider = localStorage.getItem('aiProvider');
     
@@ -235,14 +262,17 @@ window.addEventListener('load', () => {
         }
     }
     
-    // Загружаем голоса сразу и при изменении
-    loadVoices();
-    if (synth.onvoiceschanged !== undefined) {
-        synth.onvoiceschanged = loadVoices;
+    // Загружаем голоса
+    if (isSpeechSynthesisSupported()) {
+        loadVoices();
+        
+        // Обработчик для загрузки голосов когда они станут доступны
+        if (synth.getVoices().length === 0) {
+            synth.addEventListener('voiceschanged', loadVoices);
+        }
     }
 });
 
-// Остальные функции без изменений...
 saveApiKeyButton.addEventListener('click', () => {
     apiKey = apiKeyInput.value.trim();
     if (apiKey) {
@@ -263,6 +293,11 @@ voiceButton.addEventListener('click', () => {
         return;
     }
     
+    if (!recognition) {
+        addMessage("Распознавание речи не поддерживается в вашем браузере.", 'jarvis');
+        return;
+    }
+    
     if (isListening) {
         recognition.stop();
     } else {
@@ -271,10 +306,12 @@ voiceButton.addEventListener('click', () => {
         } catch (error) {
             console.error('Ошибка при запуске распознавания:', error);
             voiceError.textContent = "Ошибка при запуске микрофона";
+            addMessage("Ошибка доступа к микрофону. Проверьте разрешения браузера.", 'jarvis');
         }
     }
 });
 
+// Обработчики настроек
 rateInput.addEventListener('input', () => {
     rateValue.textContent = rateInput.value;
     saveVoiceSettings();
@@ -295,10 +332,16 @@ voiceSelect.addEventListener('change', () => {
 });
 
 testVoiceBtn.addEventListener('click', () => {
+    if (!isSpeechSynthesisSupported()) {
+        addMessage("Голосовой синтез не поддерживается в вашем браузере.", 'jarvis');
+        return;
+    }
+    
     if (!voiceSelect.value) {
         addMessage("Пожалуйста, выберите голос в настройках.", 'jarvis');
         return;
     }
+    
     speakText("Добрый день, сэр. Я Джарвис, ваш голосовой помощник. Чем могу быть полезен?");
 });
 
@@ -316,11 +359,12 @@ function addMessage(text, sender) {
     
     chatContainer.scrollTop = chatContainer.scrollHeight;
     
-    if (sender === 'jarvis') {
+    if (sender === 'jarvis' && isSpeechSynthesisSupported()) {
         speakText(text);
     }
 }
 
+// Функции API остаются без изменений
 async function askMistralAI(message) {
     try {
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
