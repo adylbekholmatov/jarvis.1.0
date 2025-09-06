@@ -22,40 +22,53 @@ let isListening = false;
 let currentProvider = 'mistral';
 let synth = window.speechSynthesis;
 let voices = [];
+let voicesLoaded = false;
+
+// Проверяем поддержку синтеза речи
+if (!synth) {
+    console.error('Браузер не поддерживает синтез речи');
+    voiceSelect.disabled = true;
+    testVoiceBtn.disabled = true;
+}
 
 function loadVoices() {
     voices = synth.getVoices();
-    voiceSelect.innerHTML = '';
+    voicesLoaded = true;
     
-    // Добавляем опцию по умолчанию
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = 'Выберите голос...';
-    voiceSelect.appendChild(defaultOption);
-    
-    // Фильтруем голоса для русского и английского
-    const availableVoices = voices.filter(voice => 
-        voice.lang.startsWith('ru') || voice.lang.startsWith('en')
-    );
-    
-    // Сортируем голоса
-    availableVoices.sort((a, b) => {
-        if (a.lang < b.lang) return -1;
-        if (a.lang > b.lang) return 1;
-        if (a.name < b.name) return -1;
-        if (a.name > b.name) return 1;
-        return 0;
-    });
-    
-    // Добавляем голоса в список
-    availableVoices.forEach(voice => {
-        const option = document.createElement('option');
-        option.value = voice.name;
-        option.textContent = `${voice.name} (${voice.lang})`;
-        voiceSelect.appendChild(option);
-    });
-    
-    loadVoiceSettings();
+    // Очищаем список только если есть голоса
+    if (voices.length > 0) {
+        voiceSelect.innerHTML = '';
+        
+        // Добавляем опцию по умолчанию
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Выберите голос...';
+        voiceSelect.appendChild(defaultOption);
+        
+        // Фильтруем голоса для русского и английского
+        const availableVoices = voices.filter(voice => 
+            voice.lang.startsWith('ru') || voice.lang.startsWith('en')
+        );
+        
+        // Сортируем голоса
+        availableVoices.sort((a, b) => {
+            if (a.lang < b.lang) return -1;
+            if (a.lang > b.lang) return 1;
+            if (a.name < b.name) return -1;
+            if (a.name > b.name) return 1;
+            return 0;
+        });
+        
+        // Добавляем голоса в список
+        availableVoices.forEach(voice => {
+            const option = document.createElement('option');
+            option.value = voice.name;
+            option.textContent = `${voice.name} (${voice.lang})`;
+            voiceSelect.appendChild(option);
+        });
+        
+        loadVoiceSettings();
+    }
 }
 
 function loadVoiceSettings() {
@@ -64,7 +77,7 @@ function loadVoiceSettings() {
     const savedPitch = localStorage.getItem('jarvisPitch');
     const savedVolume = localStorage.getItem('jarvisVolume');
     
-    if (savedVoice) {
+    if (savedVoice && voiceSelect.querySelector(`option[value="${savedVoice}"]`)) {
         voiceSelect.value = savedVoice;
     }
     
@@ -92,6 +105,11 @@ function saveVoiceSettings() {
 }
 
 function speakText(text) {
+    if (!synth) {
+        console.error('Синтез речи не поддерживается');
+        return;
+    }
+    
     if (synth.speaking) {
         synth.cancel();
     }
@@ -127,8 +145,22 @@ function speakText(text) {
     synth.speak(utterance);
 }
 
-// Остальной код остается без изменений до функции checkSpeechRecognitionSupport...
+// Инициализация голосов
+if (synth) {
+    // Загружаем голоса сразу, если они уже доступны
+    if (synth.getVoices().length > 0) {
+        loadVoices();
+    }
+    
+    // Обработчик для загрузки голосов при их готовности
+    synth.onvoiceschanged = function() {
+        if (!voicesLoaded) {
+            loadVoices();
+        }
+    };
+}
 
+// Остальной код остается без изменений...
 mistralBtn.addEventListener('click', () => {
     currentProvider = 'mistral';
     mistralBtn.classList.add('active');
@@ -235,14 +267,14 @@ window.addEventListener('load', () => {
         }
     }
     
-    // Загружаем голоса сразу и при изменении
-    loadVoices();
-    if (synth.onvoiceschanged !== undefined) {
-        synth.onvoiceschanged = loadVoices;
-    }
+    // Загружаем голоса с задержкой для обеспечения их доступности
+    setTimeout(() => {
+        if (synth && !voicesLoaded) {
+            loadVoices();
+        }
+    }, 1000);
 });
 
-// Остальные функции без изменений...
 saveApiKeyButton.addEventListener('click', () => {
     apiKey = apiKeyInput.value.trim();
     if (apiKey) {
