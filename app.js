@@ -24,6 +24,21 @@ let synth = window.speechSynthesis;
 let voices = [];
 let voicesLoaded = false;
 
+// Проверка валидности API ключа для выбранного провайдера
+async function validateApiKey(provider, key) {
+    try {
+        const url = provider === 'mistral' ?
+            'https://api.mistral.ai/v1/models' :
+            'https://api.openai.com/v1/models';
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${key}` }
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Проверяем поддержку синтеза речи
 if (!synth) {
     console.error('Браузер не поддерживает синтез речи');
@@ -72,10 +87,10 @@ function loadVoices() {
 }
 
 function loadVoiceSettings() {
-    const savedVoice = localStorage.getItem('jarvisVoice');
-    const savedRate = localStorage.getItem('jarvisRate');
-    const savedPitch = localStorage.getItem('jarvisPitch');
-    const savedVolume = localStorage.getItem('jarvisVolume');
+    const savedVoice = localStorage.getItem('arisVoice');
+    const savedRate = localStorage.getItem('arisRate');
+    const savedPitch = localStorage.getItem('arisPitch');
+    const savedVolume = localStorage.getItem('arisVolume');
     
     if (savedVoice && voiceSelect.querySelector(`option[value="${savedVoice}"]`)) {
         voiceSelect.value = savedVoice;
@@ -98,10 +113,10 @@ function loadVoiceSettings() {
 }
 
 function saveVoiceSettings() {
-    localStorage.setItem('jarvisVoice', voiceSelect.value);
-    localStorage.setItem('jarvisRate', rateInput.value);
-    localStorage.setItem('jarvisPitch', pitchInput.value);
-    localStorage.setItem('jarvisVolume', volumeInput.value);
+    localStorage.setItem('arisVoice', voiceSelect.value);
+    localStorage.setItem('arisRate', rateInput.value);
+    localStorage.setItem('arisPitch', pitchInput.value);
+    localStorage.setItem('arisVolume', volumeInput.value);
 }
 
 function speakText(text) {
@@ -190,7 +205,7 @@ function checkSpeechRecognitionSupport() {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
-        recognition.lang = 'ru-RU';
+        recognition.lang = 'ru-RU';  // Можно изменить на 'ky-KG' для кыргызского, если поддерживается
         recognition.continuous = false;
         recognition.interimResults = false;
         
@@ -213,6 +228,9 @@ function checkSpeechRecognitionSupport() {
             switch(event.error) {
                 case 'network':
                     errorMessage += "проблемы с сетью";
+                    break;
+                case 'no-speech':
+                    errorMessage += "Не услышал речи. Говорите громче или повторите.";
                     break;
                 case 'not-allowed':
                     errorMessage += "микрофон не разрешен";
@@ -247,7 +265,7 @@ function checkSpeechRecognitionSupport() {
 window.addEventListener('load', () => {
     checkSpeechRecognitionSupport();
     
-    const savedApiKey = localStorage.getItem('jarvisApiKey');
+    const savedApiKey = localStorage.getItem('arisApiKey');
     const savedProvider = localStorage.getItem('aiProvider');
     
     if (savedApiKey) {
@@ -255,7 +273,7 @@ window.addEventListener('load', () => {
         apiKeyInput.value = savedApiKey;
         apiKeyStatus.textContent = "API ключ загружен";
         apiKeyStatus.style.color = "#4caf50";
-        addMessage("API ключ загружен. Готов к работе.", 'jarvis');
+        addMessage("API ключ загружен. Готов к работе.", 'aris');
     }
     
     if (savedProvider) {
@@ -275,23 +293,36 @@ window.addEventListener('load', () => {
     }, 1000);
 });
 
-saveApiKeyButton.addEventListener('click', () => {
-    apiKey = apiKeyInput.value.trim();
-    if (apiKey) {
-        localStorage.setItem('jarvisApiKey', apiKey);
-        localStorage.setItem('aiProvider', currentProvider);
-        apiKeyStatus.textContent = "API ключ сохранен";
-        apiKeyStatus.style.color = "#4caf50";
-        addMessage(`API ключ успешно сохранен для ${currentProvider === 'mistral' ? 'Mistral AI' : 'OpenAI'}. Теперь вы можете использовать голосовые команды.`, 'jarvis');
-    } else {
+saveApiKeyButton.addEventListener('click', async () => {
+    const key = apiKeyInput.value.trim();
+    if (!key) {
         apiKeyStatus.textContent = "Введите действительный API ключ";
         apiKeyStatus.style.color = "#f44336";
+        return;
     }
+
+    apiKeyStatus.textContent = "Проверка ключа...";
+    apiKeyStatus.style.color = "#aed0d0";
+
+    const valid = await validateApiKey(currentProvider, key);
+    if (!valid) {
+        apiKeyStatus.textContent = 'API ключ недействителен!';
+        apiKeyStatus.style.color = '#f44336';
+        addMessage('API ключ недействителен. Пожалуйста, проверьте ключ и провайдера.', 'aris');
+        return;
+    }
+
+    apiKey = key;
+    localStorage.setItem('arisApiKey', apiKey);
+    localStorage.setItem('aiProvider', currentProvider);
+    apiKeyStatus.textContent = "API ключ сохранен";
+    apiKeyStatus.style.color = "#4caf50";
+    addMessage(`API ключ успешно сохранен для ${currentProvider === 'mistral' ? 'Mistral AI' : 'OpenAI'}. Теперь вы можете использовать голосовые команды.`, 'aris');
 });
 
 voiceButton.addEventListener('click', () => {
     if (!apiKey) {
-        addMessage("Сначала сохраните ваш API ключ.", 'jarvis');
+        addMessage("Сначала сохраните ваш API ключ.", 'aris');
         return;
     }
     
@@ -328,16 +359,16 @@ voiceSelect.addEventListener('change', () => {
 
 testVoiceBtn.addEventListener('click', () => {
     if (!voiceSelect.value) {
-        addMessage("Пожалуйста, выберите голос в настройках.", 'jarvis');
+        addMessage("Пожалуйста, выберите голос в настройках.", 'aris');
         return;
     }
-    speakText("Добрый день, сэр. Я Джарвис, ваш голосовой помощник. Чем могу быть полезен?");
+    speakText("Добрый день. Я ARIS, ваш интеллектуальный голосовой ассистент. Чем могу быть полезен?");
 });
 
 function addMessage(text, sender) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
-    messageDiv.classList.add(sender === 'user' ? 'user-message' : 'jarvis-message');
+    messageDiv.classList.add(sender === 'user' ? 'user-message' : 'aris-message');
     
     const messageText = document.createElement('div');
     messageText.classList.add('message-text');
@@ -348,7 +379,7 @@ function addMessage(text, sender) {
     
     chatContainer.scrollTop = chatContainer.scrollHeight;
     
-    if (sender === 'jarvis') {
+    if (sender === 'aris') {
         speakText(text);
     }
 }
@@ -366,7 +397,7 @@ async function askMistralAI(message) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'Ты JARVIS - голосовой ассистент из вселенной Marvel. Отвечай кратко, официально и по делу, как настоящий помощник Тони Старка. Будь полезным и дружелюбным. Отвечай на русском языке.'
+                        content: 'Ты ARIS - интеллектуальный голосовой ассистент (Audio Recognition Intelligent Support). Ты помогаешь в поиске информации, управлении устройствами, обучении и повседневных задачах. Отвечай кратко, полезно и дружелюбно. Анализируй запросы, давай точные ответы, веди диалог если нужно. Отвечай на русском языке.'
                     },
                     {
                         role: 'user',
@@ -403,7 +434,7 @@ async function askOpenAI(message) {
                 messages: [
                     {
                         role: 'system',
-                        content: 'Ты JARVIS - голосовой ассистент из вселенной Marvel. Отвечай кратко, официально и по делу, как настоящий помощник Тони Старка. Будь полезным и дружелюбным. Отвечай на русском языке.'
+                        content: 'Ты ARIS - интеллектуальный голосовой ассистент (Audio Recognition Intelligent Support). Ты помогаешь в поиске информации, управлении устройствами, обучении и повседневных задачах. Отвечай кратко, полезно и дружелюбно. Анализируй запросы, давай точные ответы, веди диалог если нужно. Отвечай на русском языке.'
                     },
                     {
                         role: 'user',
@@ -431,32 +462,32 @@ async function processCommand(command) {
     const lowerCommand = command.toLowerCase();
     
     if (lowerCommand.includes('привет') || lowerCommand.includes('здравствуй')) {
-        const response = "Привет, сэр. Чем могу помочь?";
-        addMessage(response, 'jarvis');
+        const response = "Привет! Я ARIS, ваш интеллектуальный ассистент. Чем могу помочь?";
+        addMessage(response, 'aris');
         return;
     }
     else if (lowerCommand.includes('время')) {
         const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
         const response = `Сейчас ${time}`;
-        addMessage(response, 'jarvis');
+        addMessage(response, 'aris');
         return;
     }
     else if (lowerCommand.includes('дата')) {
         const date = new Date().toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         const response = `Сегодня ${date}`;
-        addMessage(response, 'jarvis');
+        addMessage(response, 'aris');
         return;
     }
     else if (lowerCommand.includes('открой google')) {
         window.open("https://google.com", "_blank");
         const response = "Открываю Google";
-        addMessage(response, 'jarvis');
+        addMessage(response, 'aris');
         return;
     }
     else if (lowerCommand.includes('открой чат')) {
         window.open("https://chat.openai.com", "_blank");
         const response = "Открываю ChatGPT";
-        addMessage(response, 'jarvis');
+        addMessage(response, 'aris');
         return;
     }
     else if (lowerCommand.includes('википедия')) {
@@ -464,15 +495,22 @@ async function processCommand(command) {
         if (query) {
             window.open(`https://ru.wikipedia.org/wiki/${encodeURIComponent(query)}`, "_blank");
             const response = `Ищу "${query}" в Википедии`;
-            addMessage(response, 'jarvis');
+            addMessage(response, 'aris');
         } else {
             const response = "Пожалуйста, уточните, что искать в Википедии";
-            addMessage(response, 'jarvis');
+            addMessage(response, 'aris');
         }
         return;
     }
+    else if (lowerCommand.includes('объясни') || lowerCommand.includes('что такое')) {
+        // Добавленная команда для обучения/объяснения тем
+        const topic = command.replace(/объясни|что такое/i, '').trim();
+        const response = `Объясняю тему "${topic}": ждите ответа от AI.`;
+        addMessage(response, 'aris');
+        // Передаём в AI для детального объяснения
+    }
     
-    addMessage("Думаю...", 'jarvis');
+    addMessage("Думаю...", 'aris');
     
     try {
         let response;
@@ -482,7 +520,7 @@ async function processCommand(command) {
             response = await askOpenAI(command);
         }
         
-        addMessage(response, 'jarvis');
+        addMessage(response, 'aris');
     } catch (error) {
         console.error('Ошибка при запросе к AI:', error);
         let errorMessage = "Извините, произошла ошибка при обращении к AI. ";
@@ -497,6 +535,6 @@ async function processCommand(command) {
             errorMessage += "Проверьте ваш API ключ и подключение к интернету.";
         }
         
-        addMessage(errorMessage, 'jarvis');
+        addMessage(errorMessage, 'aris');
     }
 }
